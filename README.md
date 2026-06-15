@@ -46,12 +46,14 @@ When the program starts, it displays a banner and then enters an infinite loop t
  8.  Sort Merchants by Amount
  9.  Simulate Bank Network (Graph)
 10.  Find Cheapest Transfer Path
-11.  Exit
+11.  Verify Transaction Token
+12.  Currency Balancer Report
+13.  Exit
 -------------------------------
 Enter your choice:
 ```
 
-The user types a number (1–11) and the program runs the matching function. After the operation finishes, the menu re-appears. Choosing **11** frees all dynamically allocated memory and exits cleanly.
+The user types a number (1–13) and the program runs the matching function. After the operation finishes, the menu re-appears. Choosing **13** frees all dynamically allocated memory and exits cleanly.
 
 ---
 
@@ -106,6 +108,17 @@ Enqueue and Dequeue both run in O(1).
 
 The user is prompted to enter the number of banks, bank names, and the adjacency matrix (transfer fees) when they select **Simulate Bank Network**.
 
+### 4.6 Hash Table (Array of Linked Lists for Chaining)
+
+| Detail | Value |
+|--------|-------|
+| **Table size** | 101 |
+| **Node struct** | `TokenNode` (token string, transactionId, merchantId, amount, description, currency, next pointer) |
+| **Collision Resolution** | Chaining using Singly Linked Lists |
+| **Purpose** | Instantly verifies whether a transaction authorization code is genuine and retrieves transaction details. |
+
+Insert and Search both run in O(1) average time.
+
 ---
 
 ## 5. Algorithms Used
@@ -136,29 +149,37 @@ The user is prompted to enter the number of banks, bank names, and the adjacency
 - In each iteration it picks the unvisited node with the smallest distance, marks it visited, and relaxes all its neighbours.
 - **Time Complexity:** O(V²) where V = number of banks (since we use an adjacency matrix, not a priority queue).
 
+### 5.5 Hash Table Insertion & Search (Hashing)
+
+- String key is mapped to an array index in the range `[0, 100]` using a rolling polynomial hash.
+- Collisions are handled using external chaining (linked lists).
+- **Time Complexity:** O(1) average time.
+
 ---
 
 ## 6. Implementation Approach
 
 The entire project is written in a **single file** (`main.cpp`) and follows a procedural style. Below is the high-level flow:
 
-1. **Structs** are defined first — `Merchant`, `TransactionNode`, `StackNode`, `QueueNode`.
-2. **Global variables** hold the merchant array, linked-list head, stack top, queue front/rear, graph matrix, and counters.
+1. **Structs** are defined first — `Merchant`, `TransactionNode`, `TokenNode`, `StackNode`, `QueueNode`.
+2. **Global variables** hold the merchant array, linked-list head, stack top, queue front/rear, `hashTable` array, graph matrix, and counters.
 3. **Function prototypes** are declared before `main()`.
 4. **`main()`** initialises the graph to all zeros, prints the banner, and enters the menu loop.
 5. Each menu option calls a dedicated function:
    - `addMerchant()` — appends to the array.
    - `displayMerchants()` — traverses the array.
-   - `addTransaction()` — inserts into the linked list head, pushes to stack, enqueues to queue, and updates the merchant's total.
-   - `viewTransactionHistory()` — traverses the linked list.
+   - `addTransaction()` — prompts for currency, processes conversion, inserts into linked list head, pushes to stack, enqueues to queue, generates/inserts token, and updates merchant total.
+   - `viewTransactionHistory()` — traverses the linked list showing currencies and converted INR amounts.
    - `processPayments()` — dequeues all entries and prints them.
    - `undoLastTransaction()` — pops from stack, searches and removes from linked list, subtracts from merchant total.
    - `searchMerchantById()` — runs both linear and binary search and prints results.
    - `sortMerchantsByAmount()` — calls `bubbleSort()` and displays the sorted array.
    - `simulateBankNetwork()` — takes user input to build the adjacency matrix.
    - `findCheapestPath()` — runs Dijkstra's algorithm on the graph.
-6. **Helper functions** at the bottom implement stack push/pop, queue enqueue/dequeue, linear search, binary search, and bubble sort.
-7. On exit, all dynamically allocated linked-list and stack/queue nodes are freed.
+   - `verifyTransactionToken()` — queries the Hash Table for O(1) token validation.
+   - `currencyBalancerReport()` — scans transactions to print totals grouped by currency.
+6. **Helper functions** at the bottom implement stack push/pop, queue enqueue/dequeue, linear/binary search, bubble sort, and hash table routines.
+7. On exit, all dynamically allocated linked-list, stack/queue, and hash table nodes are freed.
 
 ---
 
@@ -168,7 +189,7 @@ The entire project is written in a **single file** (`main.cpp`) and follows a pr
 |-----------|---------------------------|-----------------|------------------|
 | Add Merchant | Array (insert at end) | O(1) | O(1) per call |
 | Display Merchants | Array traversal | O(n) | O(1) |
-| Add Transaction | Linked List insert at head + Stack push + Queue enqueue | O(1) | O(1) per call |
+| Add Transaction | Linked List + Stack + Queue + Hash Table insert | O(1) average | O(1) per call |
 | View Transaction History | Linked List traversal | O(n) | O(1) |
 | Process Payments | Queue dequeue (all) | O(k), k = queue size | O(1) |
 | Undo Last Transaction | Stack pop O(1) + Linked List search & delete O(n) | O(n) | O(1) |
@@ -177,8 +198,10 @@ The entire project is written in a **single file** (`main.cpp`) and follows a pr
 | Bubble Sort | Adjacent-swap passes | O(n²) | O(1) |
 | Simulate Bank Network | Adjacency Matrix input | O(V²) | O(V²) |
 | Dijkstra's Algorithm | Adjacency Matrix + dist[] | O(V²) | O(V) |
+| Verify Transaction Token | Hash Table Search | O(1) average | O(1) |
+| Currency Balancer Report | Linked List traversal | O(n) | O(1) |
 
-**Overall space:** O(MAX_MERCHANTS + T + V²) where T = number of transactions and V = number of banks.
+**Overall space:** O(MAX_MERCHANTS + T + V² + H) where T = transactions, V = banks, H = hash table nodes.
 
 ---
 
@@ -229,13 +252,17 @@ Enter Merchant Name : QuickMart
 Enter your choice: 3
 
 --- Add Transaction ---
-Enter Merchant ID   : 101
-Enter Amount        : 250.50
-Enter Description   : Weekly supply restock
+Enter Merchant ID: 101
+Enter Currency:
+INR/USD/EUR
+USD
+Enter Transaction Amount: 10
+Original Amount: 10 USD
+Converted Amount: Rs.830
+Enter Description: Soda
 
-[OK] Transaction #1 recorded. Amount: 250.50 for Merchant ID: 101
-     >> Pushed to UNDO stack.
-     >> Enqueued for payment processing.
+[SUCCESS] Transaction #1 added for Merchant 'QuickMart'.
+Authorization Token: TXN1001
 ```
 
 ### Undo Last Transaction
@@ -315,6 +342,42 @@ Shortest transfer cost from 'SBI':
   To ICICI : cost = 8   (via HDFC)
 ```
 
+### Verify Transaction Token (Hash Table)
+
+```
+Enter your choice: 11
+
+--- Verify Transaction Token ---
+Enter Authorization Token: TXN1001
+
+Token Found
+Transaction ID: 1
+Merchant ID: 101
+Amount: 10 USD
+Description: Soda
+
+DSA Used: Hash Table
+Average Time Complexity: O(1)
+```
+
+### Currency Balancer Report
+
+```
+Enter your choice: 12
+
+--- Currency Balancer Report ---
+
+INR Transactions: 0
+USD Transactions: 1
+EUR Transactions: 1
+
+Total Settlement Value (INR):
+Rs. 1280
+
+DSA Used: Array Traversal
+Time Complexity: O(n)
+```
+
 ---
 
 ## 10. Screenshots
@@ -354,7 +417,11 @@ The folder contains images showing:
 
 7. **Dijkstra's Algorithm** successfully finds the cheapest bank-to-bank transfer route. Using an adjacency matrix keeps the code simple, and the O(V²) complexity is acceptable for up to 10 banks.
 
-8. All data is stored **in memory only** — there are no files, databases, or network calls. This keeps the project purely within the DSA-I syllabus.
+8. **Hash Table** allows O(1) average-time verification of transaction authorization tokens. It uses linked list chaining to resolve collisions.
+
+9. **Currency Balancer** supports multiple currencies (INR, USD, EUR) using fixed conversion rates. It ensures all merchant balance modifications use converted INR value, maintaining total balance sanity.
+
+10. All data is stored **in memory only** — there are no files, databases, or network calls. This keeps the project purely within the DSA-I syllabus.
 
 ---
 

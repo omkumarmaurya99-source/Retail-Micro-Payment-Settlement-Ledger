@@ -52,7 +52,23 @@ struct TransactionNode {
     int    merchantId;
     double amount;
     char   description[100];
+    char   currency[10];
+    double amountInINR;
     TransactionNode* next;
+};
+
+// ============================================================
+//  STRUCT: TokenNode (Hash Table Node for Verification)
+//  Uses linked list chaining for handling collisions
+// ============================================================
+struct TokenNode {
+    string token;
+    int    transactionId;
+    int    merchantId;
+    float  amount;
+    string description;
+    string currency;
+    TokenNode* next;
 };
 
 // ============================================================
@@ -99,6 +115,9 @@ StackNode* stackTop = NULL;
 QueueNode* queueFront = NULL;
 QueueNode* queueRear  = NULL;
 
+// --- Hash Table for Authorization Tokens ---
+TokenNode* hashTable[101] = {NULL};
+
 // --- Graph: Adjacency Matrix for Bank Network ---
 //     graph[i][j] = cost of transfer from bank i to bank j
 //     0 means no direct connection
@@ -119,6 +138,8 @@ void searchMerchantById();
 void sortMerchantsByAmount();
 void simulateBankNetwork();
 void findCheapestPath();
+void verifyTransactionToken();
+void currencyBalancerReport();
 
 // Helper functions
 void pushToStack(int txnId, int mId, double amt, const char* desc);
@@ -130,6 +151,11 @@ bool isQueueEmpty();
 int  linearSearch(int id);
 int  binarySearch(int id);
 void bubbleSort();
+
+// Hash Table Helper functions
+int getHash(string token);
+void insertToken(string token, int txnId, int mId, float amt, string desc, string curr);
+TokenNode* searchToken(string token);
 
 // ============================================================
 //  MAIN FUNCTION – Menu-Driven Program
@@ -159,7 +185,9 @@ int main() {
         cout << " 8.  Sort Merchants by Amount"      << endl;
         cout << " 9.  Simulate Bank Network (Graph)" << endl;
         cout << "10.  Find Cheapest Transfer Path"   << endl;
-        cout << "11.  Exit"                          << endl;
+        cout << "11.  Verify Transaction Token"      << endl;
+        cout << "12.  Currency Balancer Report"      << endl;
+        cout << "13.  Exit"                          << endl;
         cout << "-------------------------------"    << endl;
         cout << "Enter your choice: ";
         cin  >> choice;
@@ -183,13 +211,15 @@ int main() {
             case 8:  sortMerchantsByAmount(); break;
             case 9:  simulateBankNetwork();  break;
             case 10: findCheapestPath();     break;
-            case 11:
+            case 11: verifyTransactionToken(); break;
+            case 12: currencyBalancerReport(); break;
+            case 13:
                 cout << "\nExiting... Thank you!\n";
                 break;
             default:
                 cout << "[ERROR] Invalid choice. Try again.\n";
         }
-    } while (choice != 11);
+    } while (choice != 13);
 
     // ----- CLEANUP: Free dynamically allocated memory -----
 
@@ -212,6 +242,15 @@ int main() {
         QueueNode* temp = queueFront;
         queueFront = queueFront->next;
         delete temp;
+    }
+
+    // Free hash table
+    for (int i = 0; i < 101; i++) {
+        while (hashTable[i] != NULL) {
+            TokenNode* temp = hashTable[i];
+            hashTable[i] = hashTable[i]->next;
+            delete temp;
+        }
     }
 
     return 0;
@@ -309,14 +348,44 @@ void addTransaction() {
         return;
     }
 
+    string currency;
+    cout << "Enter Currency:\nINR/USD/EUR\n";
+    cin  >> currency;
+
+    // Convert currency to uppercase for comparison
+    for (size_t i = 0; i < currency.length(); i++) {
+        currency[i] = toupper(currency[i]);
+    }
+
+    // Validate currency
+    while (currency != "INR" && currency != "USD" && currency != "EUR") {
+        cout << "[ERROR] Invalid currency. Enter INR, USD, or EUR: ";
+        cin  >> currency;
+        for (size_t i = 0; i < currency.length(); i++) {
+            currency[i] = toupper(currency[i]);
+        }
+    }
+
     double amount;
-    cout << "Enter Transaction Amount (Rs.): ";
+    cout << "Enter Transaction Amount: ";
     cin  >> amount;
 
     if (amount <= 0) {
         cout << "[ERROR] Amount must be positive.\n";
         return;
     }
+
+    // Convert amount to INR
+    double amountInINR = amount;
+    if (currency == "USD") {
+        amountInINR = amount * 83.0;
+    } else if (currency == "EUR") {
+        amountInINR = amount * 90.0;
+    }
+
+    // Display conversion details
+    cout << "Original Amount: " << amount << " " << currency << endl;
+    cout << "Converted Amount: Rs." << amountInINR << endl;
 
     cin.ignore();
     char desc[100];
@@ -329,23 +398,28 @@ void addTransaction() {
     newNode->merchantId    = mId;
     newNode->amount        = amount;
     strcpy(newNode->description, desc);
+    strcpy(newNode->currency, currency.c_str());
+    newNode->amountInINR   = amountInINR;
     newNode->next          = transactionHead;
     transactionHead        = newNode;   // New head
 
-    // --- Push onto Stack for undo capability – O(1) ---
-    // Using Stack (LIFO) so the most recent transaction can be undone
-    pushToStack(nextTransactionId, mId, amount, desc);
+    // --- Push onto Stack for undo capability – O(1) (store converted INR amount) ---
+    pushToStack(nextTransactionId, mId, amountInINR, desc);
 
-    // --- Enqueue into Queue for FIFO payment processing – O(1) ---
-    // Using Queue (FIFO) so payments are processed in order
-    enqueue(nextTransactionId, mId, amount);
+    // --- Enqueue into Queue for FIFO payment processing – O(1) (store converted INR amount) ---
+    enqueue(nextTransactionId, mId, amountInINR);
 
-    // Update merchant's running total
-    merchants[index].totalAmount += amount;
+    // Generate authorization token (e.g. TXN1001)
+    char tokenStr[20];
+    snprintf(tokenStr, sizeof(tokenStr), "TXN%d", 1000 + nextTransactionId);
+    insertToken(tokenStr, nextTransactionId, mId, amount, desc, currency);
+
+    // Update merchant's running total in INR only
+    merchants[index].totalAmount += amountInINR;
 
     cout << "[SUCCESS] Transaction #" << nextTransactionId
-         << " of Rs." << amount << " added for Merchant '"
-         << merchants[index].name << "'.\n";
+         << " added for Merchant '" << merchants[index].name << "'.\n";
+    cout << "Authorization Token: " << tokenStr << "\n";
 
     nextTransactionId++;
 }
@@ -362,21 +436,22 @@ void viewTransactionHistory() {
     }
 
     cout << "\n--- Transaction History (most recent first) ---\n";
-    cout << "---------------------------------------------------\n";
-    cout << "  TxnID | MerchantID | Amount    | Description\n";
-    cout << "---------------------------------------------------\n";
+    cout << "----------------------------------------------------------------------------------------\n";
+    cout << "  TxnID | MerchantID | Original Amt       | Converted Amt      | Description\n";
+    cout << "----------------------------------------------------------------------------------------\n";
 
     // Traverse the linked list from head to end – O(n)
     TransactionNode* current = transactionHead;
     while (current != NULL) {
         cout << "  " << current->transactionId
              << "\t|  " << current->merchantId
-             << "\t     |  Rs." << current->amount
-             << "\t  | " << current->description << endl;
+             << "\t     |  " << current->amount << " " << current->currency
+             << "\t\t  |  Rs." << current->amountInINR
+             << "\t\t       | " << current->description << endl;
         current = current->next;
     }
 
-    cout << "---------------------------------------------------\n";
+    cout << "----------------------------------------------------------------------------------------\n";
 }
 
 // ============================================================
@@ -881,6 +956,103 @@ void bubbleSort() {
             }
         }
     }
+}
+
+// ============================================================
+//  HASH TABLE OPERATIONS & NEW FEATURES
+// ============================================================
+
+// Hash function: simple polynomial hash for string keys, modulo 101
+int getHash(string token) {
+    int hash = 0;
+    for (size_t i = 0; i < token.length(); i++) {
+        hash = (hash * 31 + token[i]) % 101;
+    }
+    return hash;
+}
+
+// Insert token details into Hash Table (chained link at head) - O(1) average
+void insertToken(string token, int txnId, int mId, float amt, string desc, string curr) {
+    int index = getHash(token);
+    TokenNode* newNode = new TokenNode;
+    newNode->token = token;
+    newNode->transactionId = txnId;
+    newNode->merchantId = mId;
+    newNode->amount = amt;
+    newNode->description = desc;
+    newNode->currency = curr;
+    newNode->next = hashTable[index];
+    hashTable[index] = newNode;
+}
+
+// Search token details in Hash Table - O(1) average
+TokenNode* searchToken(string token) {
+    int index = getHash(token);
+    TokenNode* current = hashTable[index];
+    while (current != NULL) {
+        if (current->token == token) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL; // Not found
+}
+
+// Option 11: Verify Transaction Token
+void verifyTransactionToken() {
+    string token;
+    cout << "\n--- Verify Transaction Token ---\n";
+    cout << "Enter Authorization Token: ";
+    cin  >> token;
+
+    // Convert input to uppercase for case insensitivity
+    for (size_t i = 0; i < token.length(); i++) {
+        token[i] = toupper(token[i]);
+    }
+
+    TokenNode* node = searchToken(token);
+    if (node != NULL) {
+        cout << "\nToken Found\n";
+        cout << "Transaction ID: " << node->transactionId << endl;
+        cout << "Merchant ID: " << node->merchantId << endl;
+        cout << "Amount: " << node->amount << " " << node->currency << endl;
+        cout << "Description: " << node->description << endl;
+    } else {
+        cout << "\n[ERROR] Token not found.\n";
+    }
+
+    cout << "\nDSA Used: Hash Table\n";
+    cout << "Average Time Complexity: O(1)\n";
+}
+
+// Option 12: Currency Balancer Report
+void currencyBalancerReport() {
+    int inrCount = 0;
+    int usdCount = 0;
+    int eurCount = 0;
+    double totalValINR = 0.0;
+
+    // Traverse transaction list and count/sum - O(n)
+    TransactionNode* current = transactionHead;
+    while (current != NULL) {
+        if (strcmp(current->currency, "INR") == 0) {
+            inrCount++;
+        } else if (strcmp(current->currency, "USD") == 0) {
+            usdCount++;
+        } else if (strcmp(current->currency, "EUR") == 0) {
+            eurCount++;
+        }
+        totalValINR += current->amountInINR;
+        current = current->next;
+    }
+
+    cout << "\n--- Currency Balancer Report ---\n\n";
+    cout << "INR Transactions: " << inrCount << endl;
+    cout << "USD Transactions: " << usdCount << endl;
+    cout << "EUR Transactions: " << eurCount << endl;
+    cout << "\nTotal Settlement Value (INR):\nRs. " << totalValINR << endl;
+    cout << "\nDSA Used: Array Traversal\n";
+    cout << "Time Complexity: O(n)\n";
 }
 
 /*
